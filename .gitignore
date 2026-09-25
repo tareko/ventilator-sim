@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.coverage
+
+# tool scratch: the Playwright UI check puts screenshots here
+.artifacts/
+
+# editors
+.idea/
+.vscode/
+*.swp
+.DS_Store

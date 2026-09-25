@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VentSim - bedside ventilator and blood-gas simulator</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1216; --panel: #171b21; --panel2: #1c2128; --edge: #262c35;
+    --ink: #d8dee7; --dim: #8a949f; --accent: #5ac8fa;
+    --ok: #58b06a; --warn: #d8a53f; --alert: #d9584a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font: 13px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 10px 12px 40px;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace; }
+  header { max-width: 1120px; margin: 0 auto 10px; }
+  header h1 { font-size: 17px; margin: 0 0 2px; font-weight: 600; letter-spacing: .3px; }
+  header .sub { color: var(--dim); font-size: 12px; }
+  .wrap {
+    max-width: 1120px; margin: 0 auto;
+    display: grid; gap: 12px; align-items: start;
+    grid-template-columns: 300px minmax(0, 1fr) 316px;
+  }
+  @media (max-width: 1180px) {
+    .wrap { grid-template-columns: 280px minmax(0, 1fr); }
+    .col-right { grid-column: 1 / span 2; display: grid; gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  }
+  @media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } .col-right { grid-column: auto; } }
+  section {
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 12px;
+  }
+  section:last-child { margin-bottom: 0; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; margin: 0 0 8px;
+    color: var(--dim); font-weight: 600; }
+  select, input[type=number] {
+    background: var(--panel2); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 5px; padding: 4px 6px; font: inherit;
+  }
+  input[type=number] { width: 66px; text-align: right; }
+  input[type=range] { flex: 1 1 60px; accent-color: var(--accent); height: 18px; }
+  .ctl { display: grid; grid-template-columns: 114px minmax(38px, 1fr) 58px; gap: 3px 8px;
+    align-items: center; margin-bottom: 3px; }
+  .ctl .lab { color: var(--dim); font-size: 11px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
+  .ctl .sl { display: contents; }
+  .ctl.disabled { opacity: .35; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .abg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .tile { background: var(--panel2); border: 1px solid var(--edge); border-radius: 7px;
+    padding: 7px 9px; }
+  .tile .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--dim); }
+  .tile .v { font-size: 25px; line-height: 1.1; margin-top: 2px; }
+  .tile .u { font-size: 10.5px; color: var(--dim); }
+  .v.ok { color: var(--ok); } .v.warn { color: var(--warn); } .v.alert { color: var(--alert); }
+  .derived { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 6px 10px; }
+  .d { border-bottom: 1px solid var(--edge); padding-bottom: 3px; }
+  .d .k { color: var(--dim); font-size: 10.5px; }
+  .d .v { font-size: 14.5px; }
+  .story { color: var(--dim); font-size: 12px; }
+  .story b { color: var(--ink); font-weight: 600; }
+  ul.flags { list-style: none; margin: 0; padding: 0; }
+  ul.flags li { padding: 4px 8px; border-radius: 5px; margin-bottom: 4px; font-size: 12px;
+    border-left: 3px solid; background: var(--panel2); }
+  li.alert { border-color: var(--alert); color: #f1b7b1; }
+  li.warn { border-color: var(--warn); color: #eddcb4; }
+  li.ok { border-color: var(--ok); color: #bdd9c3; }
+  button {
+    background: var(--panel2); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 5px; padding: 5px 10px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #233b4a; border-color: #2f5568; }
+  canvas { display: block; width: 100%; }
+  .trends { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+  .trend { background: var(--panel2); border: 1px solid var(--edge); border-radius: 7px; padding: 5px 7px; }
+  .trend .k { font-size: 10.5px; color: var(--dim); display: flex; justify-content: space-between; }
+  .trend .v { font-size: 15px; }
+  .seg { display: inline-flex; border: 1px solid var(--edge); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 3px 9px; font-size: 11.5px; }
+  .seg button.on { background: #23404f; color: #cfe9f7; }
+  .hint { color: var(--dim); font-size: 11px; }
+  .kv { color: var(--dim); font-size: 11.5px; }
+  .kv b { color: var(--ink); font-weight: 500; }
+  .legend { font-size: 10.5px; color: var(--dim); margin-top: 4px; line-height: 1.5; }
+  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 3px 0 8px;
+    vertical-align: -1px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>VentSim <span class="hint">multi-compartment V/Q lung, blood gas and time course</span></h1>
+  <div class="sub mono" id="siteline">- loading -</div>
+</header>
+
+<div class="wrap">
+  <div class="col-left">
+    <section>
+      <h2>Scenario</h2>
+      <select id="scenario" style="width:100%"></select>
+      <p class="story" id="story" style="margin:8px 0 0"></p>
+    </section>
+
+    <section>
+      <h2>Ventilator</h2>
+      <div class="ctl" style="grid-template-columns:1fr">
+        <span class="lab">mode</span>
+        <select id="mode" style="width:100%">
+          <option value="vc">VC-AC</option>
+          <option value="pc">PC-AC</option>
+          <option value="psv">PSV</option>
+        </select>
+      </div>
+      <div id="vent-controls"></div>
+      <div class="kv" id="ventinfo" style="margin-top:8px"></div>
+    </section>
+
+    <section>
+      <h2>Patient</h2>
+      <div id="patient-controls"></div>
+      <div class="kv" id="patientinfo" style="margin-top:8px"></div>
+    </section>
+  </div>
+
+  <div class="col-mid">
+    <section>
+      <h2 style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span>Arterial blood gas</span>
+        <span class="seg" id="viewseg">
+          <button data-v="steady" class="on">operating point</button>
+          <button data-v="sim">now</button>
+        </span>
+      </h2>
+      <div class="abg" id="abg"></div>
+      <div class="kv" id="abgsub" style="margin-top:8px"></div>
+    </section>
+
+    <section>
+      <h2>Derived</h2>
+      <div class="derived" id="derived"></div>
+    </section>
+
+    <section>
+      <h2>Flags</h2>
+      <ul class="flags" id="flags"></ul>
+    </section>
+  </div>
+
+  <div class="col-right">
+    <section>
+      <h2>Run the clock</h2>
+      <div class="row">
+        <label class="hint" for="dt">step</label>
+        <select id="dt">
+          <option value="0.02">0.02 min</option>
+          <option value="0.05">0.05 min</option>
+          <option value="0.1" selected>0.1 min</option>
+          <option value="0.25">0.25 min</option>
+          <option value="0.5">0.5 min</option>
+          <option value="1">1 min</option>
+          <option value="2">2 min</option>
+        </select>
+        <label class="hint" for="mins">run</label>
+        <input type="number" id="mins" value="5" min="0.1" step="0.1" style="width:62px">
+        <button class="primary" id="run">Run</button>
+        <button id="step1">Step</button>
+        <button id="reset">Reset</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label class="hint"><input type="checkbox" id="auto"> auto-run</label>
+        <label class="hint" for="speed">speed</label>
+        <select id="speed">
+          <option value="1">1 tick/s</option>
+          <option value="4" selected>4 ticks/s</option>
+          <option value="15">15 ticks/s</option>
+        </select>
+        <span class="kv">clock <b class="mono" id="clock">t = 0 min</b></span>
+      </div>
+      <div class="trends" id="trends" style="margin-top:10px"></div>
+      <div class="legend" id="trendinfo">Reset returns the simulation to the scenario baseline.</div>
+    </section>
+
+    <section>
+      <h2>Lung units <span class="hint" id="vqhint"></span></h2>
+      <canvas id="vq" height="270"></canvas>
+      <div class="kv mono" id="vqread" style="margin-top:4px;min-height:16px">hover a unit</div>
+      <div class="legend">
+        <span class="sw" style="background:#d9584a"></span>shunt (V/Q &lt; 0.05)
+        <span class="sw" style="background:#d8a53f"></span>low V/Q
+        <span class="sw" style="background:#58b06a"></span>normal
+        <span class="sw" style="background:#4fb4d8"></span>high V/Q (&gt; 2)
+        <br>
+        tall bar = ventilation, short overlay = perfusion (own scale). Bottom strips:
+        recruitment, overdistension. Ticks under the axis grow with the diseased share of the unit.
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="ventsim.js"></script>
+<script>
+'use strict';
+var V = Ventsim;
+/* ------------------------------------------------------------------ scenarios
+ * Transcribed from ventsim/scenarios.py, including the renal adapt_hours of the
+ * chronic hypercapnic case (its bicarbonate has 48 h of kidney work in it).
+ */
+var SCENARIOS = [
+  { key: 'normal', title: 'Healthy adult, anaesthetised', adapt_hours: 0,
+    patient: { name: 'healthy 42 y', height_cm: 172, weight_kg: 75, compliance: 60,
+      resistance: 5, sedation: 1.0, notes: 'reference case' },
+    vent: { mode: 'vc', vt_ml_kg: 8, rr: 12, peep: 5, fio2: 0.30 },
+    expect: 'PaCO2 follows the ventilation change within a minute or two; the A-a gradient ' +
+      'stays small; plateau pressure is ~14 cmH2O.' },
+  { key: 'ards_mild', title: 'Mild ARDS', adapt_hours: 0,
+    patient: { name: 'ARDS, mild', height_cm: 170, weight_kg: 70, severity: 0.28,
+      compliance: 42, resistance: 7, heterogeneity: 0.40, hgb: 12.0, co_l_min: 5.5,
+      rv_sensitivity: 1.1, notes: 'P/F 200-280, both lungs hazy' },
+    vent: { mode: 'vc', vt_ml_kg: 6, rr: 19, peep: 8, fio2: 0.50 },
+    expect: 'Driving pressure stays under 15; oxygenation responds to modest PEEP. Going to ' +
+      '8 ml/kg looks attractive and is still wrong for the lung, not the numbers.' },
+  { key: 'ards_mod', title: 'Moderate ARDS', adapt_hours: 0,
+    patient: { name: 'ARDS, moderate', height_cm: 170, weight_kg: 70, severity: 0.55,
+      compliance: 28, resistance: 8, heterogeneity: 0.45, hgb: 11.0, co_l_min: 6.0,
+      rv_sensitivity: 1.2, notes: 'P/F ~100, dependent collapse' },
+    vent: { mode: 'vc', vt_ml_kg: 6, rr: 21, peep: 10, fio2: 0.80 },
+    expect: 'Recruitment climbs with PEEP while shunt falls, but local stress and dead space ' +
+      'rise and cardiac output drops. Somewhere in the middle driving pressure is lowest - ' +
+      'that is the honest optimum.' },
+  { key: 'ards_severe', title: 'Severe ARDS', adapt_hours: 0,
+    patient: { name: 'ARDS, severe', height_cm: 168, weight_kg: 68, severity: 0.80,
+      compliance: 18, resistance: 10, heterogeneity: 0.55, hgb: 9.5, co_l_min: 7.0,
+      rv_sensitivity: 1.5, notes: 'P/F <100, tiny baby lung' },
+    vent: { mode: 'vc', vt_ml_kg: 4.5, rr: 32, peep: 14, fio2: 1.0 },
+    expect: '6 ml/kg produces a plateau pressure over 40. CO2 cannot be cleared without ' +
+      'destroying the lung: accept the hypercapnia.' },
+  { key: 'pneumonia', title: 'Lobar pneumonia', adapt_hours: 0,
+    patient: { name: 'right lower lobe pneumonia', height_cm: 175, weight_kg: 78,
+      severity: 0.30, affected_fraction: 0.42, heterogeneity: 0.15, compliance: 45,
+      resistance: 6, hgb: 12.0, co_l_min: 6.5,
+      lung_overrides: { affected_closing_lo: 12.0, affected_closing_hi: 26.0 },
+      notes: 'dense consolidation, little V/Q scatter' },
+    vent: { mode: 'vc', vt_ml_kg: 6, rr: 22, peep: 10, fio2: 0.70 },
+    expect: 'FiO2 to 1.0 moves PaO2 much less than you expect - that is the definition of ' +
+      'shunt. PEEP helps some, at the price of plateau pressure and cardiac output.' },
+  { key: 'copd', title: 'COPD / emphysema on the ventilator', adapt_hours: 0,
+    patient: { name: 'COPD, emphysema', height_cm: 170, weight_kg: 70, severity: 0.15,
+      compliance: 45, resistance: 16, exp_limit: 3.0, heterogeneity: 0.45,
+      vascular_loss: 0.35, co_l_min: 6.5, hgb: 14.0, vco2: 190.0, sedation: 1.0,
+      notes: 'obstruction + capillary loss' },
+    vent: { mode: 'vc', vt_ml_kg: 8, rr: 11, ie: 2.0, peep: 5, fio2: 0.30 },
+    expect: 'Faster rate: auto-PEEP climbs, plateau climbs, CO2 barely improves. Slower rate ' +
+      'with a long exhalation: auto-PEEP falls and the same ventilation is achieved with less ' +
+      'pressure.' },
+  { key: 'asthma', title: 'Severe asthma', adapt_hours: 0,
+    patient: { name: 'asthma, near-fatal', height_cm: 178, weight_kg: 75, severity: 0.10,
+      compliance: 55, resistance: 30, exp_limit: 6.0, heterogeneity: 0.50, co_l_min: 7.0,
+      vco2: 210.0, sedation: 1.0, notes: 'bronchospasm' },
+    vent: { mode: 'vc', vt_ml_kg: 8, rr: 12, ie: 2.0, peep: 5, fio2: 0.35 },
+    expect: 'At RR 12 the plateau is over 40 with auto-PEEP near 25 and cardiac output down a ' +
+      'third. Slow the rate, take the I:E to 1:4 and accept the CO2 - permissive hypercapnia.' },
+  { key: 'pe', title: 'Massive pulmonary embolism', adapt_hours: 0,
+    patient: { name: 'PE, massive', height_cm: 175, weight_kg: 80, severity: 0.05,
+      compliance: 55, resistance: 6, heterogeneity: 0.60, perfusion_gradient: 0.8,
+      vascular_loss: 0.60, co_l_min: 4.0, rv_sensitivity: 2.0, vco2: 230, sedation: 1.0,
+      pfo: 0.06, notes: 'ventilated but not perfused' },
+    vent: { mode: 'vc', vt_ml_kg: 8, rr: 16, peep: 5, fio2: 0.40 },
+    expect: 'High Vd/Vt with nearly normal shunt, hypoxaemia that FiO2 partly fixes, and PEEP ' +
+      'making the cardiac output worse - the dead-space pattern, opposite to ARDS.' },
+  { key: 'fibrosis', title: 'Idiopathic pulmonary fibrosis', adapt_hours: 0,
+    patient: { name: 'IPF', height_cm: 165, weight_kg: 60, severity: 0.45,
+      affected_fraction: 0.95, compliance: 22, resistance: 5, heterogeneity: 1.00,
+      perfusion_gradient: 1.6, co_l_min: 6.0, hgb: 13.0,
+      lung_overrides: { healthy_closing: 2.0, affected_closing_lo: 2.0,
+        affected_closing_hi: 6.0, stiff_affected: 0.40, od_lo_affected: 26.0,
+        od_span_affected: 10.0 }, notes: 'stiff, not recruitable' },
+    vent: { mode: 'vc', vt_ml_kg: 6, rr: 30, peep: 8, fio2: 0.60 },
+    expect: 'PEEP barely moves PaO2 and moves dead space and stress up. Fast shallow breathing ' +
+      'with low volumes suits this lung; the low compliance is not an invitation to bigger ' +
+      'tidal volumes.' },
+  { key: 'obesity', title: 'Obese patient, post-operative', adapt_hours: 0,
+    patient: { name: 'obese 45 y', height_cm: 170, weight_kg: 145, compliance: 30,
+      resistance: 8, frc_l: 1.30, sedation: 1.0, co_l_min: 6.5, vco2: 240, hgb: 14.0,
+      lung_overrides: { healthy_closing: 18.0, od_lo_healthy: 20.0 },
+      notes: 'heavy chest wall, low FRC, dependent atelectasis' },
+    vent: { mode: 'vc', vt_ml_kg: 8, rr: 14, peep: 5, fio2: 0.50 },
+    expect: 'PaO2 at PEEP 5 is bad because the dependent lung is simply collapsed; PEEP 10-14 ' +
+      'recruits it and oxygenation jumps, with little cost because there is no inflammation to ' +
+      'make the lung fragile.' },
+  { key: 'chronic_hypercapnic', title: 'Chronic CO2 retention (48 h)', adapt_hours: 48,
+    patient: { name: 'COPD, chronic hypercapnic', height_cm: 168, weight_kg: 65,
+      severity: 0.25, compliance: 42, resistance: 14, exp_limit: 2.5, vco2: 200,
+      sedation: 1.0, hgb: 15.0, co_l_min: 6.0, notes: 'kidneys fully compensated' },
+    vent: { mode: 'vc', vt_ml_kg: 6, rr: 13, ie: 3.0, peep: 6, fio2: 0.35 },
+    expect: 'pH goes from ~7.37 to ~7.68 in half an hour: post-hypercapnic alkalosis. Undoing ' +
+      'it takes days - the kidney that grew the bicarbonate over two days does not forget in ' +
+      'thirty minutes.' },
+  { key: 'weaning', title: 'Spontaneous breathing, insufficient support', adapt_hours: 0,
+    patient: { name: 'day 4, weaning trial', height_cm: 172, weight_kg: 72, severity: 0.30,
+      compliance: 45, resistance: 7, sedation: 0.15, muscle: 0.8, vco2: 240, hgb: 11.0,
+      co_l_min: 5.5, notes: 'breathing spontaneously on PSV' },
+    vent: { mode: 'psv', dp: 8, rr: 8, peep: 5, fio2: 0.35 },
+    expect: 'More support lowers the drive and the work; less support raises both. Unlike ' +
+      'controlled modes, there is a real equilibrium per support level and the blood gas moves ' +
+      'to it over minutes.' }
+];
+
+var VENT_SPECS = [
+  { field: 'fio2', lab: 'FiO2', min: 0.21, max: 1, step: 0.01, dg: 2 },
+  { field: 'peep', lab: 'PEEP', min: 0, max: 45, step: 0.5, dg: 1, unit: 'cmH2O' },
+  { field: 'vt_ml_kg', lab: 'Vt', min: 2, max: 15, step: 0.1, dg: 1, unit: 'mL/kg',
+    show: function (m) { return m === 'vc'; } },
+  { field: 'rr', lab: 'rate', min: 1, max: 60, step: 1, dg: 0,
+    lab2: function (m) { return m === 'psv' ? 'backup rate' : 'rate'; } },
+  { field: 'ie', lab: 'I:E 1:x', min: 0.35, max: 10, step: 0.05, dg: 2 },
+  { field: 'dp', lab: 'dP / PS', min: 0, max: 60, step: 0.5, dg: 1, unit: 'cmH2O',
+    lab2: function (m) { return m === 'psv' ? 'PS' : 'dP'; },
+    show: function (m) { return m !== 'vc'; } }
+];
+
+var PATIENT_SPECS = [
+  { field: 'compliance', lab: 'compliance', min: 5, max: 120, step: 1, dg: 0, unit: 'mL/cmH2O' },
+  { field: 'resistance', lab: 'resistance', min: 1, max: 60, step: 0.5, dg: 1, unit: 'cmH2O/L/s' },
+  { field: 'severity', lab: 'severity', min: 0, max: 1, step: 0.01, dg: 2 },
+  { field: 'hgb', lab: 'Hb', min: 4, max: 20, step: 0.1, dg: 1, unit: 'g/dL' },
+  { field: 'co_l_min', lab: 'CO', min: 1, max: 12, step: 0.1, dg: 1, unit: 'L/min' },
+  { field: 'vco2', lab: "V'CO2", min: 80, max: 500, step: 5, dg: 0, unit: 'mL/min' },
+  { field: 'sedation', lab: 'sedation', min: 0, max: 1, step: 0.01, dg: 2 },
+  { field: 'exp_limit', lab: 'flow limit', min: 1, max: 8, step: 0.1, dg: 1 },
+  { field: 'muscle', lab: 'muscle', min: 0, max: 1.2, step: 0.05, dg: 2 },
+  { field: 'renal', lab: 'renal', min: 0, max: 1, step: 0.05, dg: 2 },
+  { field: 'hco3', lab: 'HCO3', min: 8, max: 45, step: 0.5, dg: 1, unit: 'mmol/L' },
+  { field: 'vascular_loss', lab: 'vessels lost', min: 0, max: 0.8, step: 0.01, dg: 2 },
+  { field: 'pfo', lab: 'PFO', min: 0, max: 0.3, step: 0.005, dg: 3 },
+  { field: 'heterogeneity', lab: 'scatter', min: 0, max: 1, step: 0.01, dg: 2 },
+  { field: 'height_cm', lab: 'height', min: 120, max: 220, step: 1, dg: 0, unit: 'cm' },
+  { field: 'weight_kg', lab: 'weight', min: 30, max: 250, step: 1, dg: 0, unit: 'kg' }
+];
+
+/* ------------------------------------------------------------------ state */
+var state = {
+  scenario: 'normal',
+  vent: {},
+  patient: {},
+  view: 'steady',
+  hco3Now: 24.0
+};
+var sim = null;
+var samples = [];
+var autoTimer = null;
+
+function $(id) { return document.getElementById(id); }
+function fmt(x, dg) {
+  if (x === null || x === undefined || !isFinite(x)) return '-';
+  if (Math.abs(x) >= 10000) return x.toExponential(1);
+  return x.toFixed(dg === undefined ? 1 : dg);
+}
+function clamp(x, lo, hi) { return x < lo ? lo : (x > hi ? hi : x); }
+function num(v, dflt) {
+  var x = parseFloat(v);
+  return isFinite(x) ? x : dflt;
+}
+
+/* --------------------------------------------------------------- controls */
+var controls = { vent: {}, patient: {} };
+
+function buildControls(containerId, group, specs) {
+  var host = $(containerId);
+  specs.forEach(function (spec) {
+    var row = document.createElement('div');
+    row.className = 'ctl';
+    var lab = document.createElement('span');
+    lab.className = 'lab';
+    lab.textContent = spec.lab + (spec.unit ? ' ' + spec.unit : '');
+    lab.title = lab.textContent;
+    var sl = document.createElement('span');
+    sl.className = 'sl';
+    var rg = document.createElement('input');
+    rg.type = 'range';
+    rg.min = spec.min; rg.max = spec.max; rg.step = spec.step;
+    var nm = document.createElement('input');
+    nm.type = 'number';
+    nm.min = spec.min; nm.max = spec.max; nm.step = spec.step;
+    sl.appendChild(rg); sl.appendChild(nm);
+    row.appendChild(lab); row.appendChild(sl);
+    host.appendChild(row);
+
+    var ctl = { spec: spec, row: row, label: lab, range: rg, number: nm, group: group };
+    controls[group][spec.field] = ctl;
+    var apply = function (v) {
+      v = clamp(v, spec.min, spec.max);
+      state[group][spec.field] = v;
+      ctl.range.value = v;
+      ctl.number.value = (spec.dg === 0) ? String(Math.round(v)) : String(v);
+      onSettingChanged(group, spec.field);
+    };
+    rg.addEventListener('input', function () { apply(num(rg.value, spec.min)); });
+    nm.addEventListener('input', function () {
+      var v = num(nm.value, state[group][spec.field]);
+      v = clamp(v, spec.min, spec.max);
+      ctl.range.value = v;                 /* slider follows, number keeps typing */
+      state[group][spec.field] = v;
+      onSettingChanged(group, spec.field);
+    });
+    nm.addEventListener('change', function () { apply(num(nm.value, spec.min)); });
+  });
+}
+
+function setControl(group, field, value) {
+  var ctl = controls[group][field];
+  if (!ctl) return;
+  if (value === null || value === undefined) value = ctl.spec.min;
+  ctl.range.value = value;
+  ctl.number.value = (ctl.spec.dg === 0) ? String(Math.round(value)) : String(value);
+}
+
+function refreshControlDecorations() {
+  var mode = state.vent.mode;
+  Object.keys(controls.vent).forEach(function (f) {
+    var ctl = controls.vent[f], spec = ctl.spec;
+    var on = spec.show ? spec.show(mode) : true;
+    ctl.row.classList.toggle('disabled', !on);
+    if (spec.lab2) {
+      ctl.label.textContent = spec.lab2(mode) + (spec.unit ? ' ' + spec.unit : '');
+      ctl.label.title = ctl.label.textContent;
+    }
+  });
+}
+
+/* ------------------------------------------------------- scenario handling */
+function scenarioByKey(key) {
+  for (var i = 0; i < SCENARIOS.length; i++) if (SCENARIOS[i].key === key) return SCENARIOS[i];
+  return SCENARIOS[0];
+}
+
+function loadScenario(key) {
+  var s = scenarioByKey(key);
+  state.scenario = key;
+  $('scenario').value = key;
+
+  var vbase = { mode: 'vc', fio2: 0.5, peep: 5, vt_ml_kg: 8, rr: 12, ie: 2, dp: 12, ti_s: null };
+  var vs = {};
+  Object.keys(vbase).forEach(function (k) { vs[k] = vbase[k]; });
+  Object.keys(s.vent).forEach(function (k) { vs[k] = s.vent[k]; });
+  state.vent = vs;
+
+  /* the panel shows the values the model actually runs with, so take the
+     resolved ones (V'CO2 from IBW, defaults for anything the scenario omits) */
+  var probe = new V.Patient(s.patient);
+  var ps = {};
+  PATIENT_SPECS.forEach(function (spec) { ps[spec.field] = probe[spec.field]; });
+  Object.keys(s.patient).forEach(function (k) {
+    if (!Object.prototype.hasOwnProperty.call(ps, k)) ps[k] = s.patient[k];
+  });
+  state.patient = ps;
+
+  $('mode').value = state.vent.mode;
+  Object.keys(controls.vent).forEach(function (f) { setControl('vent', f, state.vent[f]); });
+  Object.keys(controls.patient).forEach(function (f) { setControl('patient', f, state.patient[f]); });
+  refreshControlDecorations();
+
+  /* story */
+  $('story').innerHTML = '<b>' + esc(s.title) + '</b><br>' +
+    esc(storyText(s)) + '<br><span class="hint">expect: ' + esc(s.expect) + '</span>';
+  rebuildSim(true);
+  render();
+}
+
+function storyText(s) {
+  var p = new V.Patient(s.patient);
+  var v = new V.Vent(s.vent);
+  return v.summary(p.ibw) + ' - ' + (p.notes || '');
+}
+
+function esc(t) {
+  return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* ----------------------------------------------------------- simulation */
+function patientOfState() { return new V.Patient(state.patient); }
+function ventOfState() { return new V.Vent(state.vent); }
+
+function rebuildSim(keepTrendClear) {
+  var p = patientOfState(), v = ventOfState();
+  var sc = scenarioByKey(state.scenario);
+  sim = new V.Simulation(p, v);
+  samples = [];
+  if (sc.adapt_hours > 0) {
+    sim.adapt(sc.adapt_hours);
+    sim.equilibrate();
+  }
+  samples = [];
+  pushSample();
+  state.hco3Now = sim.hco3;
+  if (keepTrendClear) $('trendinfo').textContent = 'Reset to ' + sc.title +
+    (sc.adapt_hours ? ' (kidneys adapted over ' + sc.adapt_hours + ' h)' : '') + '.';
+}
+
+function syncSimSettings() {
+  if (!sim) return;
+  sim.patient = patientOfState();
+  sim.vent = ventOfState().clamped();
+}
+
+function pushSample() {
+  var r = sim.current();
+  samples.push({
+    t: sim.t_min, ph: r.ph, paco2: r.paco2, pao2: r.pao2, hco3: r.hco3, pplat: r.pplat
+  });
+  if (samples.length > 6000) samples.splice(0, samples.length - 6000);
+  state.hco3Now = sim.hco3;
+}
+
+function runSim(minutes) {
+  var dt = num($('dt').value, 0.1);
+  var n = Math.round(minutes / dt);
+  if (n > MAX_RUN_STEPS) {
+    $('trendinfo').textContent = 'Refused: ' + n + ' steps at dt=' + dt +
+      ' min. Pick a coarser step or a shorter run.';
+    return;
+  }
+  n = Math.max(n, 1);
+  var every = Math.max(1, Math.ceil(n / 300));
+  for (var k = 1; k <= n; k++) {
+    sim.step(dt);
+    if (k % every === 0 || k === n) pushSample();
+  }
+  render();
+}
+
+function stepSim() {
+  sim.step(num($('dt').value, 0.1));
+  pushSample();
+  render();
+}
+
+/* --------------------------------------------------------------- rendering */
+var ABG_DEFS = [
+  { k: 'ph', name: 'pH', dg: 2, cls: function (r) {
+    if (r.ph < 7.30 || r.ph > 7.50) return 'alert';
+    if (r.ph < 7.35 || r.ph > 7.45) return 'warn'; return ''; } },
+  { k: 'paco2', name: 'PaCO2', dg: 1, unit: 'mmHg', cls: function (r) {
+    if (r.paco2 > 60) return 'alert'; if (r.paco2 > 50 || r.paco2 < 33) return 'warn'; return ''; } },
+  { k: 'pao2', name: 'PaO2', dg: 1, unit: 'mmHg', cls: function (r) {
+    if (r.sao2 < 0.90) return 'alert';
+    if (r.pao2 < 60) return 'alert';
+    if (r.pao2 < 80 || (r.pao2 > 130 && r.fio2 > 0.35)) return 'warn'; return ''; } },
+  { k: 'sao2', name: 'SaO2', dg: 0, unit: '%', mul: 100, cls: function (r) {
+    if (r.sao2 < 0.90) return 'alert'; if (r.sao2 < 0.94) return 'warn'; return ''; } },
+  { k: 'hco3', name: 'HCO3', dg: 1, unit: 'mmol/L', cls: function (r) {
+    if (r.hco3 < 18 || r.hco3 > 36) return 'alert';
+    if (r.hco3 < 22 || r.hco3 > 32) return 'warn'; return ''; } },
+  { k: 'be', name: 'base excess', dg: 1, unit: 'mmol/L', cls: function (r) {
+    if (r.be < -8 || r.be > 5) return 'alert';
+    if (r.be < -3 || r.be > 3) return 'warn'; return ''; } }
+];
+
+var DERIVED = [
+  { k: 'pf', name: 'P/F', dg: 0, cls: function (r) {
+    if (r.pf < 100) return 'alert'; if (r.pf < 200) return 'warn'; return ''; } },
+  { k: 'oi', name: 'oxygenation index', dg: 1 },
+  { k: 'pplat', name: 'plateau', dg: 1, cls: function (r) {
+    if (r.pplat > 30) return 'alert'; if (r.pplat > 28) return 'warn'; return ''; } },
+  { k: 'dp_stat', name: 'driving pressure', dg: 1, cls: function (r) {
+    if (r.dp_stat > 17) return 'alert'; if (r.dp_stat > 15) return 'warn'; return ''; } },
+  { k: 'auto_peep', name: 'auto-PEEP', dg: 1, cls: function (r) {
+    if (r.auto_peep > 8) return 'alert'; if (r.auto_peep > 4) return 'warn'; return ''; } },
+  { k: 'pmean', name: 'mean airway', dg: 1 },
+  { k: 'pip', name: 'peak pressure', dg: 1 },
+  { k: 'vd_vt', name: 'Vd/Vt', dg: 2, cls: function (r) {
+    if (r.vd_vt > 0.65) return 'warn'; return ''; } },
+  { k: 'shunt_pct', name: 'shunt', dg: 1, unit: '%', cls: function (r) {
+    if (r.shunt_pct > 20) return 'alert'; if (r.shunt_pct > 10) return 'warn'; return ''; } },
+  { k: 'recruit_pct', name: 'recruited', dg: 1, unit: '%' },
+  { k: 'vq_low_pct', name: 'low V/Q', dg: 1, unit: '%' },
+  { k: 'vq_high_pct', name: 'high V/Q', dg: 1, unit: '%' },
+  { k: 'co_l_min', name: 'cardiac output', dg: 1, unit: 'L/min' },
+  { k: 'local_stress', name: 'local stress', dg: 1, cls: function (r) {
+    if (r.local_stress > 28) return 'warn'; return ''; } },
+  { k: 'mp_j_min', name: 'mechanical power', dg: 1, unit: 'J/min', cls: function (r) {
+    if (r.mp_j_min > 10) return 'warn'; return ''; } },
+  { k: 've_l_min', name: 'minute vol', dg: 2, unit: 'L/min' },
+  { k: 'va_l_min', name: 'alveolar vol', dg: 2, unit: 'L/min' },
+  { k: 'drive', name: 'drive', dg: 2, unit: 'x rest', cls: function (r) {
+    if (r.drive > 1.8) return 'warn'; return ''; } },
+  { k: 'effort_ratio', name: 'delivered/wanted Vt', dg: 2, cls: function (r) {
+    if (r.mode === 'psv' && r.effort_ratio < 0.97) return 'warn'; return ''; } },
+  { k: 'aa_gradient', name: 'A-a gradient', dg: 1 },
+  { k: 'c_dyn', name: 'dynamic compliance', dg: 1 },
+  { k: 'ti_s', name: 'inspiratory time', dg: 2, unit: 's' },
+  { k: 'cao2', name: 'Hb O2 content art', dg: 3, unit: 'mL/mL' },
+  { k: 'do2', name: 'O2 delivery', dg: 0, unit: 'mL/min' }
+];
+
+function displayedResult() {
+  var p = patientOfState(), v = ventOfState();
+  if (state.view === 'sim' && sim) return sim.current(true);
+  /* the operating point of the running simulation: seeded from the current
+     blood gas, so for an equilibrated case this is the true steady state */
+  if (sim) return sim.target(true);
+  var r = V.solveSteady(p, v, { hco3: state.hco3Now, keep_units: true });
+  return r;
+}
+
+function render() {
+  var r = displayedResult();
+  var p = patientOfState();
+
+  /* header line */
+  var s = scenarioByKey(state.scenario);
+  $('siteline').textContent = s.title + '  |  ' + new V.Vent(state.vent).summary(p.ibw) +
+    '  |  IBW ' + fmt(p.ibw, 1) + ' kg  Vt ' + fmt(r.vt_ml, 0) + ' mL  (' +
+    fmt(r.vt_ml_kg, 1) + ' mL/kg)';
+
+  /* ABG */
+  var host = $('abg');
+  host.innerHTML = '';
+  ABG_DEFS.forEach(function (d) {
+    var tile = document.createElement('div');
+    tile.className = 'tile';
+    var v = r[d.k] * (d.mul || 1);
+    tile.innerHTML = '<div class="k">' + d.name + '</div>' +
+      '<div class="v mono ' + (d.cls ? d.cls(r) : '') + '">' + fmt(v, d.dg) +
+      (d.unit ? '<span class="u"> ' + d.unit + '</span>' : '') + '</div>';
+    host.appendChild(tile);
+  });
+  $('abgsub').innerHTML =
+    (state.view === 'sim' ? '<b>simulated state</b> at t = ' + fmt(sim.t_min, 2) + ' min'
+      : '<b>steady-state operating point</b> (where the gases are heading)') +
+    ' &nbsp; HCO3 ' + fmt(r.hco3, 1) + ' mmol/L, mixed venous PvCO2 ' + fmt(r.pvco2, 1) +
+    ', PvO2 ' + fmt(r.pvo2, 1) + ' mmHg';
+
+  /* derived */
+  var dh = $('derived');
+  dh.innerHTML = '';
+  DERIVED.forEach(function (d) {
+    var div = document.createElement('div');
+    div.className = 'd';
+    div.innerHTML = '<div class="k">' + d.name + (d.unit ? ' ' + d.unit : '') + '</div>' +
+      '<div class="v mono ' + (d.cls ? d.cls(r) : '') + '">' + fmt(r[d.k], d.dg) + '</div>';
+    dh.appendChild(div);
+  });
+
+  /* flags */
+  var ul = $('flags');
+  ul.innerHTML = '';
+  if (!r.flags.length) {
+    var li = document.createElement('li');
+    li.className = 'ok';
+    li.textContent = 'no flags';
+    ul.appendChild(li);
+  }
+  r.flags.forEach(function (f) {
+    var li = document.createElement('li');
+    li.className = f[0];
+    li.textContent = f[1];
+    ul.appendChild(li);
+  });
+
+  /* patient info */
+  $('patientinfo').innerHTML =
+    'IBW <b>' + fmt(p.ibw, 1) + '</b> kg &nbsp; FRC <b>' + fmt(p.frc_l, 2) + '</b> L' +
+    ' &nbsp; V\'CO2 <b>' + fmt(p.vco2, 0) + '</b> mL/min' +
+    ' &nbsp; diseased units <b>' + fmt(100 * p.lung.affected_frac, 0) + '</b>%' +
+    ' &nbsp; Hb <b>' + fmt(p.hgb, 1) + '</b> g/dL';
+  $('ventinfo').innerHTML =
+    'mode <b>' + new V.Vent(state.vent).label + '</b> &nbsp; Ti <b>' + fmt(r.ti_s, 2) +
+    '</b> s &nbsp; peak flow <b>' + fmt(r.peak_flow, 0) + '</b> L/min' +
+    ' &nbsp; PEEP+auto <b>' + fmt(r.peep_total, 1) + '</b> cmH2O';
+
+  $('clock').textContent = 't = ' + fmt(sim.t_min, 2) + ' min';
+  $('vqhint').textContent = 'n = ' + p.lung.n_units + ', PaO2 ' + fmt(r.pao2, 0) +
+    ' / PaCO2 ' + fmt(r.paco2, 0);
+  drawVQ(r);
+  drawTrends();
+  syncSeg();
+}
+
+function syncSeg() {
+  var btns = $('viewseg').getElementsByTagName('button');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle('on', btns[i].getAttribute('data-v') === state.view);
+  }
+}
+
+/* --------------------------------------------------------------- drawings */
+function dprCanvas(canvas) {
+  var d = window.devicePixelRatio || 1;
+  /* remember the logical height: the canvas height attribute reflects itself */
+  if (canvas._lh === undefined) canvas._lh = parseInt(canvas.getAttribute('height'), 10) || 200;
+  var h = canvas._lh;
+  var w = canvas.clientWidth || (canvas.parentNode && canvas.parentNode.clientWidth) || 300;
+  if (w < 20) w = 300;
+  canvas.width = Math.round(w * d);
+  canvas.height = Math.round(h * d);
+  canvas.style.height = h + 'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  return { ctx: ctx, w: w, h: h };
+}
+
+var vqGeom = null, vqUnits = [];
+
+function vqColour(u) {
+  if (u.shunt) return '#d9584a';
+  if (u.vq < 0.6) return '#d8a53f';
+  if (u.vq > 2.0) return '#4fb4d8';
+  return '#58b06a';
+}
+
+function vqHover(ev) {
+  var read = $('vqread');
+  if (!vqGeom || !vqUnits.length) return;
+  var rect = $('vq').getBoundingClientRect();
+  var i = Math.floor((ev.clientX - rect.left - vqGeom.padL) / vqGeom.colW);
+  if (i < 0 || i >= vqGeom.n) { read.textContent = 'hover a unit'; return; }
+  var u = vqUnits[i];
+  read.textContent =
+    '#' + i + '  z ' + u.z.toFixed(2) +
+    '   V ' + fmt(u.va, 0) + ' mL/min' +
+    '   Q ' + fmt(100 * u.perf, 1) + '%' +
+    '   V/Q ' + (isFinite(u.vq) ? fmt(u.vq, 2) : 'inf') +
+    '   PcCO2 ' + fmt(u.pc_co2, 1) +
+    '   PO2 ' + fmt(u.po2, 1) +
+    '   CcO2 ' + fmt(100 * u.cc_o2, 1) + ' mL/dL' +
+    '   recruit ' + fmt(u.recruited, 2) +
+    '   od ' + fmt(u.overdist, 2) +
+    '   disease ' + fmt(u.diseased, 2) +
+    (u.shunt ? '   SHUNT' : '');
+}
+
+function drawVQ(r) {
+  var canvas = $('vq');
+  var g = dprCanvas(canvas), ctx = g.ctx, W = g.w, H = g.h;
+  ctx.clearRect(0, 0, W, H);
+  var units = r.units || [];
+  if (!units.length) return;
+  var n = units.length;
+  var padL = 40, padR = 6, padT = 20;
+  var mainH = H - padT - 74;
+  var stripY = padT + mainH + 8;
+  var maxVa = 0, maxPerf = 0;
+  units.forEach(function (u) { if (u.va > maxVa) maxVa = u.va; if (u.perf > maxPerf) maxPerf = u.perf; });
+  maxVa = Math.max(maxVa, 1e-9); maxPerf = Math.max(maxPerf, 1e-9);
+
+  var colW = (W - padL - padR) / n;
+  var bw = Math.max(2, colW * 0.36);
+  vqGeom = { padL: padL, colW: colW, n: n };
+  vqUnits = units;
+
+  /* grid */
+  ctx.strokeStyle = '#262c35';
+  ctx.fillStyle = '#8a949f';
+  ctx.font = '9px ui-monospace, monospace';
+  ctx.lineWidth = 1;
+  [0, 0.5, 1].forEach(function (f) {
+    var y = padT + mainH - f * mainH;
+    ctx.beginPath(); ctx.moveTo(padL, y + 0.5); ctx.lineTo(W - padR, y + 0.5); ctx.stroke();
+    ctx.fillText(String(Math.round(f * maxVa)), 4, y + 3);
+  });
+  ctx.fillText('vent mL/min', 4, 9);
+  ctx.fillText('Q ' + (100 * maxPerf).toFixed(1) + '%', W - padR - 54, 9);
+
+  for (var i = 0; i < n; i++) {
+    var u = units[i];
+    var x = padL + i * colW;
+    var hv = (u.va / maxVa) * mainH;
+    ctx.fillStyle = vqColour(u);
+    ctx.globalAlpha = 0.35 + 0.65 * clamp(u.recruited, 0, 1);
+    ctx.fillRect(x + colW * 0.12, padT + mainH - hv, bw, hv);
+    ctx.globalAlpha = 1;
+    var hp = (u.perf / maxPerf) * mainH;
+    ctx.fillStyle = u.shunt ? '#8d3a33' : '#5a6470';
+    ctx.fillRect(x + colW * 0.12 + bw + 1, padT + mainH - hp, bw, hp);
+    if (u.overdist > 0.01) {
+      ctx.strokeStyle = '#d9c24a';
+      ctx.beginPath();
+      ctx.moveTo(x + colW * 0.06, padT + mainH - hv - 2.5);
+      ctx.lineTo(x + colW - colW * 0.1, padT + mainH - hv - 2.5);
+      ctx.stroke();
+    }
+  }
+
+  /* strips: recruitment and overdistension */
+  var stripH = 20;
+  var strips = [
+    { label: 'recruit', key: 'recruited', colour: '#3fb3b0' },
+    { label: 'od', key: 'overdist', colour: '#d9c24a' }
+  ];
+  strips.forEach(function (strip, si) {
+    var y = stripY + si * (stripH + 4);
+    ctx.strokeStyle = '#262c35';
+    ctx.strokeRect(padL, y, W - padL - padR, stripH);
+    ctx.fillStyle = '#8a949f';
+    ctx.fillText(strip.label, 4, y + stripH - 6);
+    for (var i = 0; i < n; i++) {
+      var u = units[i], f = clamp(u[strip.key] || 0, 0, 1);
+      var x = padL + i * colW;
+      ctx.fillStyle = strip.colour;
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(x + colW * 0.12, y + stripH - (stripH * f), colW * 0.76, stripH * f);
+      ctx.globalAlpha = 1;
+    }
+  });
+
+  /* diseased ticks */
+  var tickY = stripY + 2 * (stripH + 4) + 4;
+  ctx.fillStyle = '#8a949f';
+  ctx.fillText('units', 4, tickY + 8);
+  ctx.fillText('non-dependent', padL + 4, H - 3);
+  ctx.fillText('dependent', W - padR - 56, H - 3);
+  for (var i2 = 0; i2 < n; i2++) {
+    var x2 = padL + i2 * colW;
+    var aff = clamp(units[i2].diseased, 0, 1);
+    ctx.fillStyle = aff > 0.01 ? '#a5533f' : '#262c35';
+    ctx.fillRect(x2 + colW * 0.2, tickY, Math.max(2, colW * 0.6), 3 + aff * 5);
+  }
+}
+
+var TREND_DEFS = [
+  { k: 'ph', name: 'pH', dg: 3, colour: '#5ac8fa' },
+  { k: 'paco2', name: 'PaCO2', dg: 1, colour: '#d8a53f' },
+  { k: 'pao2', name: 'PaO2', dg: 1, colour: '#58b06a' },
+  { k: 'hco3', name: 'HCO3', dg: 2, colour: '#b48ad9' },
+  { k: 'pplat', name: 'Pplat', dg: 1, colour: '#d9584a' }
+];
+
+function drawTrends() {
+  var host = $('trends');
+  if (!host.childElementCount) {
+    TREND_DEFS.forEach(function (d) {
+      var box = document.createElement('div');
+      box.className = 'trend';
+      box.innerHTML = '<div class="k"><span>' + d.name + '</span><span class="v mono" id="tv-' +
+        d.k + '">-</span></div><canvas height="46" id="tc-' + d.k + '"></canvas>';
+      host.appendChild(box);
+    });
+  }
+  TREND_DEFS.forEach(function (d) {
+    var vals = samples.map(function (s) { return s[d.k]; });
+    $('tv-' + d.k).textContent = vals.length ? fmt(vals[vals.length - 1], d.dg) : '-';
+    var canvas = $('tc-' + d.k);
+    var g = dprCanvas(canvas), ctx = g.ctx, W = g.w, H = g.h;
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = '#262c35';
+    ctx.beginPath(); ctx.moveTo(0, H - 0.5); ctx.lineTo(W, H - 0.5); ctx.stroke();
+    if (vals.length < 2) return;
+    var lo = Infinity, hi = -Infinity;
+    vals.forEach(function (v) { if (v < lo) lo = v; if (v > hi) hi = v; });
+    if (hi - lo < 1e-9) { hi += 1; lo -= 1; }
+    var padY = (hi - lo) * 0.12; lo -= padY; hi += padY;
+    ctx.strokeStyle = d.colour;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (var i = 0; i < vals.length; i++) {
+      var x = (i / (vals.length - 1)) * (W - 2) + 1;
+      var y = H - 2 - ((vals[i] - lo) / (hi - lo)) * (H - 4);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#8a949f';
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.fillText(fmt(hi, d.dg > 2 ? 2 : d.dg), 2, 9);
+    ctx.fillText(fmt(lo, d.dg > 2 ? 2 : d.dg), 2, H - 3);
+  });
+}
+
+/* ---------------------------------------------------------------- events */
+function onSettingChanged(group, field) {
+  if (group === 'patient' && field === 'hco3') {
+    /* editing the metabolic set point also moves the current bicarbonate */
+    if (sim) sim.hco3 = state.patient.hco3;
+    state.hco3Now = state.patient.hco3;
+  }
+  syncSimSettings();
+  refreshControlDecorations();
+  render();
+}
+
+function wire() {
+  var sel = $('scenario');
+  SCENARIOS.forEach(function (s) {
+    var o = document.createElement('option');
+    o.value = s.key;
+    o.textContent = s.title;
+    sel.appendChild(o);
+  });
+  sel.addEventListener('change', function () { loadScenario(sel.value); });
+
+  $('mode').addEventListener('change', function () {
+    state.vent.mode = $('mode').value;
+    onSettingChanged('vent', 'mode');
+  });
+
+  buildControls('vent-controls', 'vent', VENT_SPECS.filter(function (s) { return s.field !== 'mode'; }));
+  buildControls('patient-controls', 'patient', PATIENT_SPECS);
+
+  $('viewseg').addEventListener('click', function (ev) {
+    var b = ev.target.getAttribute && ev.target.getAttribute('data-v');
+    if (!b) return;
+    state.view = b;
+    render();
+  });
+
+  $('run').addEventListener('click', function () {
+    var m = num($('mins').value, 5);
+    if (m > 0) runSim(m);
+  });
+  $('step1').addEventListener('click', stepSim);
+  $('reset').addEventListener('click', function () { rebuildSim(true); render(); });
+
+  $('dt').addEventListener('change', function () {
+    $('trendinfo').textContent = 'step size ' + $('dt').value + ' min';
+  });
+  $('auto').addEventListener('change', startOrStopAuto);
+  $('speed').addEventListener('change', startOrStopAuto);
+
+  window.addEventListener('resize', function () {
+    drawTrends();
+    drawVQ(displayedResult());
+  });
+
+  var vqCanvas = $('vq');
+  vqCanvas.addEventListener('mousemove', vqHover);
+  vqCanvas.addEventListener('mouseleave', function () {
+    $('vqread').textContent = 'hover a unit';
+  });
+
+  loadScenario('normal');
+  render();
+}
+
+var autoTimer = null;
+var MAX_RUN_STEPS = 20000;
+function startOrStopAuto() {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  if (!$('auto').checked) return;
+  var dt = num($('dt').value, 0.1);
+  var interval = 1000 / Math.max(num($('speed').value, 4), 1);
+  autoTimer = setInterval(function () {
+    if (!$('auto').checked) { clearInterval(autoTimer); autoTimer = null; return; }
+    sim.step(dt);
+    pushSample();
+    render();
+  }, interval);
+}
+
+if (typeof Ventsim === 'undefined') {
+  document.body.innerHTML = '<p style="padding:20px">ventsim.js not found: keep it next to this page.</p>';
+} else {
+  wire();
+}
+</script>
+</body>
+</html>
