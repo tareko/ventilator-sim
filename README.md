@@ -206,6 +206,11 @@ Things worth an hour with each case:
 
 ## Where the numbers come from
 
+> **Full provenance is in [REFERENCES.md](REFERENCES.md)** — every formula,
+> constant and threshold, labelled by whether it is literature-pinned,
+> textbook-standard, or calibrated by us to reproduce the textbook behaviour
+> of a disease (with the bibliography to check us against).
+
 Every formula in the model is a standard one. Values quoted as used here.
 
 | thing | formula / value | where it is from |
@@ -288,6 +293,7 @@ ventsim/          physiology.py lung.py model.py dynamics.py scenarios.py optimi
 web/              ventsim.html  ventsim.js  cases.json  scenarios.json
 tools/            gen_cases.py check_parity.js check_scenarios.js calibrate.py check_ui.py ...
 tests/            pytest suite
+root              README.md  REFERENCES.md  LICENSE (AGPL-3.0)
 ```
 
 ## License
